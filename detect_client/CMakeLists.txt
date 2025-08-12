@@ -1,5 +1,7 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.15)
+
 set(CMAKE_CXX_STANDARD  17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -37,9 +39,9 @@ endif ()
 if (${BUILD_TYPE} STREQUAL dummy)
     set(link_dirs ${common_link_dirs}
             )
-    set(link_libs bm_utility
-            ${OpenCV_LIBS} 
-            avcodec avutil avformat swscale
+    set(link_libs otl
+            ${OpenCV_LIBS}
+            avcodec avformat avfilter avutil swscale swresample avdevice
             jsoncpp_lib
             )
 endif ()
@@ -59,7 +61,7 @@ link_directories(${link_dirs})
 
 find_package(Qt5Widgets)
 
-add_executable(face_detect_client main.cpp stream_controller.cpp
+add_executable(detect_client main.cpp stream_controller.cpp
         ../client_common/container_widget.cpp
         stream_demo_qt.cpp
         system_settings_dlg.cpp
@@ -68,7 +70,7 @@ add_executable(face_detect_client main.cpp stream_controller.cpp
         stream_demo_qt.qrc
         open_stream_dlg.cpp
         )
-target_link_libraries(face_detect_client Qt5::Widgets
+target_link_libraries(detect_client Qt5::Widgets
         ${link_libs}
         ${other_libs}
        )

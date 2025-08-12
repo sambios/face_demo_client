@@ -1,10 +1,12 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.15)
 project(face_demo_client)
 
 #set(CMAKE_C_COMPILER /home/yuan/x86-64-core-i7--glibc--stable/bin/x86_64-linux-gcc)
 #set(CMAKE_CXX_COMPILER /home/yuan/x86-64-core-i7--glibc--stable/bin/x86_64-linux-g++)
 
-set(CMAKE_CXX_STANDARD  17)
+set(CMAKE_CXX_STANDARD  20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 set(BUILD_TYPE dummy)
 set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -12,7 +14,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(OpenCV_DIR /usr/local/opt/opencv@3/share/OpenCV)
 find_package(OpenCV)
 
-set(APP_TOP ${CMAKE_SOURCE_DIR})
+set(APP_TOP ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (UNIX)
    add_compile_options(-std=c++11 -Wno-deprecated-declarations)
@@ -20,10 +22,11 @@ if (UNIX)
 endif()
 
 set(common_inc_dirs ${APP_TOP}/client_common
-        ${APP_TOP}/utility
-        ${APP_TOP}/third_party/jsoncpp
         ${OpenCV_INCLUDE_DIRS}
-        ${FFMPEG_ROOT}/include)
+        ${FFMPEG_ROOT}/include
+        ${APP_TOP}/../otl
+        ${APP_TOP}/third_party/jsoncpp
+)
 set(common_link_dirs ${FFMPEG_ROOT}/lib)
 
 if (WIN32)
@@ -37,6 +40,5 @@ if (WIN32)
    
 endif()
 
-add_subdirectory(utility)
 add_subdirectory(third_party/jsoncpp)
-add_subdirectory(face_detect_client)
+add_subdirectory(detect_client)

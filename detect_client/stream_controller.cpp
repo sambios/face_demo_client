@@ -1,13 +1,14 @@
 #include "stream_controller.h"
 #include <qwidget.h>
-#include "face_info_serialize.h"
+
+#include "otl_baseclass.h"
 #include "otl_string.h"
 
 StreamController::StreamController(video_widget *pWidget, const std::string& strUrl, int channel):m_video_widget(pWidget),
 m_rtsp_url(strUrl), m_rtsp_reader(channel)
 {
     m_video_widget->SetTitle(QString("Channel-%1 | 1920x1080").arg(channel));
-    m_rtsp_reader.set_observer(this);
+    m_rtsp_reader.setObserver(this);
 }
 
 
@@ -31,8 +32,8 @@ int StreamController::start_stream(const std::string& strmFmt, const std::string
 
     AVDictionary *opts=NULL;
     av_dict_set(&opts, "pcie_no_copyback", "0", 0);
-    m_rtsp_reader.demuxer().set_param(strmFmt, pixelFmt, w, h);
-    int ret = m_rtsp_reader.open_stream(m_rtsp_url, true, opts);
+    //m_rtsp_reader.demuxer().set_param(strmFmt, pixelFmt, w, h);
+    int ret = m_rtsp_reader.openStream(m_rtsp_url, true, opts);
     if (ret < 0){
         return ret;
     }
@@ -52,7 +53,7 @@ int StreamController::stop_stream()
         delete m_play_thread;
         m_play_thread = nullptr;
     }
-    m_rtsp_reader.close_stream(false);
+    m_rtsp_reader.closeStream(false);
     return 0;
 }
 
@@ -61,7 +62,7 @@ void StreamController::set_frame_bufferd_num(int num)
     //m_frame_buffered_num = num;
 }
 
-void StreamController::on_decoded_avframe(const AVPacket *pkt, const AVFrame *pFrame)
+void StreamController::onDecodedAVFrame(const AVPacket *pkt, const AVFrame *pFrame)
 {
 #if 0
     static int64_t last_frame_time = 0;
@@ -80,15 +81,15 @@ void StreamController::on_decoded_avframe(const AVPacket *pkt, const AVFrame *pF
 
 
 
-void StreamController::on_decoded_sei_info(const uint8_t *sei_data, int sei_data_len, uint64_t pkt_pts, int64_t pkt_pos)
+void StreamController::onDecodedSeiInfo(const uint8_t *sei_data, int sei_data_len, uint64_t pkt_pts, int64_t pkt_pos)
 {
     TestFaceInfo faceinfo;
     faceinfo.pkt_pts = pkt_pts;
     faceinfo.pkt_pos = pkt_pos;
-
-    std::string sei_raw = String::base64_dec(sei_data, sei_data_len);
-    bm::ByteBuffer buf(sei_raw.data(), sei_raw.size());
+    std::string sei_raw = otl::base64Dec(sei_data, sei_data_len);
+    otl::ByteBuffer buf(sei_raw.data(), sei_raw.size());
     faceinfo.datum.fromByteBuffer(&buf);
+
     std::lock_guard<std::mutex> lck(m_framelist_sync);
     m_faceList.push_back(faceinfo);
 

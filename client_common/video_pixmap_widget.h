@@ -4,8 +4,7 @@
 #include <QWidget>
 #include <QTimer>
 #include <mutex>
-#include "otl_utils.h"
-#include "face_info_serialize.h"
+#include "otl_baseclass.h"
 
 namespace Ui {
 class video_pixmap_widget;
@@ -13,13 +12,15 @@ class video_pixmap_widget;
 
 #define BM_UPDATE_VIDEO (QEvent::Type)(QEvent::User + 1)
 
+struct AVFrame;
+
 class IVideoDrawer {
 public:
     virtual ~IVideoDrawer(){}
     virtual int frame_width() = 0;
     virtual int frame_height() = 0;
     virtual int draw_frame(const AVFrame *frame) = 0;
-    virtual int draw_info(const bm::NetOutputDatum &info) = 0;
+    virtual int draw_info(const otl::Detection &info) = 0;
     virtual int clear_frame() = 0;
 };
 
@@ -34,7 +35,7 @@ public:
     virtual int frame_width() override;
     virtual int frame_height() override;
     virtual int draw_frame(const AVFrame *frame) override;
-    virtual int draw_info(const bm::NetOutputDatum &info) override;
+    virtual int draw_info(const otl::Detection &info) override;
     int clear_frame() override;
 
 protected:
@@ -53,20 +54,16 @@ private:
                             const float threshold, float scaleX, float scaleY);
     Ui::video_pixmap_widget *ui;
     AVFrame *m_avframe {0};
-    bm::NetOutputDatum m_info;
+    otl::Detection m_info;
     QTimer *m_refreshTimer;
     std::mutex m_syncLock;
     int m_roi_heatbeat{0};
 
     std::string m_vct_label[4] = {
-        /*  "helmet",
+          "helmet",
             "safety helmet",
             "hat",
-            "no hat"*/
-        "头盔",
-        "安全帽",
-        "普通帽子",
-        "无帽子"
+            "no hat"
     };
 };
 

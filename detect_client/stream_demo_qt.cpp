@@ -16,7 +16,7 @@ stream_demo_qt::stream_demo_qt(QWidget *parent)
     statusBar()->hide();
 
     //initGUITheme();
-    m_strTitle = "BITMAIN BM1684-FaceDemo";
+    m_strTitle = "Enrigin YOLO Detection Client";
     setWindowTitle(QString::fromStdString(m_strTitle));
     loadConfig();
 
@@ -39,7 +39,7 @@ void stream_demo_qt::loadConfig() {
     Json::Reader reader;
     Json::Value root;
     if (!reader.parse(fs, root, false)) {
-        flog(LOG_ERROR, "Parse cofnig file failed!");
+        printf("Parse cofnig file failed!");
         fs.close();
         return;
     }
@@ -125,15 +125,15 @@ void stream_demo_qt::onMenuAddWidget()
         video_widget *pWidget = m_pVideoContainerWidget->addChildWnd();
         if (!isUseSameUrl) {
             if (inputUrl.startsWith("rtsp://")) {
-                real_url = String::format("%s_%d", inputUrl.toLocal8Bit().data(), i);
+                real_url = otl::formatString("%s_%d", inputUrl.toLocal8Bit().data(), i);
             }else if(inputUrl.startsWith("udp://")){
-                auto iports = String::split(inputUrl.toStdString().substr(6), ":");
+                auto iports = otl::splitString(inputUrl.toStdString().substr(6), ":");
                 int port_base = std::atoi(iports[1].c_str());
-                real_url = String::format("udp://%s:%d?overrun_nonfatal=1&fifo_size=5000000", iports[0].c_str(), port_base + i);
+                real_url = otl::formatString("udp://%s:%d?overrun_nonfatal=1&fifo_size=5000000", iports[0].c_str(), port_base + i);
             }else if(inputUrl.startsWith("tcp://")){
-                auto iports = String::split(inputUrl.toStdString().substr(6), ":");
+                auto iports = otl::splitString(inputUrl.toStdString().substr(6), ":");
                 int port_base = std::atoi(iports[1].c_str());
-                real_url = String::format("tcp://%s:%d?listen&tcp_nodelay=1", iports[0].c_str(), port_base + i);
+                real_url = otl::formatString("tcp://%s:%d?listen&tcp_nodelay=1", iports[0].c_str(), port_base + i);
             }
             else{
                 QMessageBox::information(this, windowTitle(), "Not supported!");

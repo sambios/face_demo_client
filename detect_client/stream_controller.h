@@ -1,19 +1,18 @@
 #pragma once
 #include <QtCore>
 
-#include "stream_decode.h"
+#include "stream_decode_hw.h"
 #include "video_widget.h"
-#include "face_info_serialize.h"
 
 struct TestFaceInfo {
     int64_t pkt_pts;
     int64_t pkt_pos;
-    bm::NetOutputDatum datum;
+    otl::Detection datum;
 };
 
-class StreamController:public fdrtsp::StreamDecoderEvents
+class StreamController:public otl::StreamDecoderEvents
 {
-    fdrtsp::StreamDecoder m_rtsp_reader;
+    otl::StreamDecoder m_rtsp_reader;
     video_widget *m_video_widget;
     std::string m_rtsp_url;
 
@@ -31,8 +30,8 @@ public:
     void set_frame_bufferd_num(int num);
 
 protected:
-    virtual void on_decoded_avframe(const AVPacket *pkt, const AVFrame *pFrame) override;
-    virtual void on_decoded_sei_info(const uint8_t *sei_data, int sei_data_len, uint64_t pts, int64_t pos) override;
+    virtual void onDecodedAVFrame(const AVPacket *pkt, const AVFrame *pFrame) override;
+    virtual void onDecodedSeiInfo(const uint8_t *sei_data, int sei_data_len, uint64_t pts, int64_t pos) override;
 
 
 private:
