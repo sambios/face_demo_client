@@ -86,9 +86,14 @@ void StreamController::onDecodedSeiInfo(const uint8_t *sei_data, int sei_data_le
     TestFaceInfo faceinfo;
     faceinfo.pkt_pts = pkt_pts;
     faceinfo.pkt_pos = pkt_pos;
+    //std::string SEI((char*)sei_data, sei_data_len);
+    //std::cout << SEI << std::endl;
     std::string sei_raw = otl::base64Dec(sei_data, sei_data_len);
-    otl::ByteBuffer buf(sei_raw.data(), sei_raw.size());
+
+    otl::ByteBuffer buf((const char*)sei_raw.data(), sei_raw.size());
     faceinfo.datum.fromByteBuffer(&buf);
+
+    std::cout << faceinfo.datum.toString() << std::endl;
 
     std::lock_guard<std::mutex> lck(m_framelist_sync);
     m_faceList.push_back(faceinfo);
@@ -97,74 +102,134 @@ void StreamController::onDecodedSeiInfo(const uint8_t *sei_data, int sei_data_le
 
 void StreamController::video_play_thread_proc() {
 
-    while(m_is_play_thread_running){
-        if (m_video_widget == nullptr || m_frameList.size() == 0){
+    // while(m_is_play_thread_running){
+    //     if (m_video_widget == nullptr || m_frameList.size() == 0){
+    //         std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    //         continue;
+    //     }
+    //
+    //     std::lock_guard<std::mutex> lck(m_framelist_sync);
+    //     if (m_frameList.size() > 0) {
+    //
+    //         auto myFrame = m_frameList.front();
+    //         auto cur_ts = av_gettime_relative();
+    //         bool is_play = false;
+    //         if (m_last_system_ts == 0) {
+    //             is_play = true;
+    //         }else {
+    //             auto delta = myFrame->pkt_pts - m_last_pkt_pts;
+    //             delta = delta > 40000 ? 40000:delta;
+    //             if (m_last_system_ts + delta < cur_ts){
+    //                 is_play = true;
+    //             }
+    //         }
+    //
+    //         if (!is_play) {
+    //             std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    //             continue;
+    //         }
+    //
+    //
+    //         int N = 1;
+    //
+    //         if (m_frameList.size() > 2) N = 2;
+    //         while(N-- > 0) {
+    //             auto myFrame = m_frameList.front();
+    //             std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
+    //             std::cout << "cache frames:" << m_frameList.size() << std::endl;
+    //             //std::cout << "Frame Play Interval: " << (cur_ts - m_last_system_ts) / 1000 << std::endl;
+    //             m_last_system_ts = cur_ts;
+    //             m_last_pkt_pts = myFrame->pkt_pts;
+    //
+    //             m_frameList.pop_front();
+    //             auto render = m_video_widget->GetVideoHwnd();
+    //             render->draw_frame(myFrame);
+    //
+    //             while (m_faceList.size() > 0) {
+    //                 auto faceinfo = m_faceList.front();
+    //                 if (AV_NOPTS_VALUE == faceinfo.pkt_pts) {
+    //                     std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
+    //                     //if (faceinfo.pkt_pos <= myFrame->pkt_pos)
+    //                     {
+    //                         std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
+    //                         render->draw_info(faceinfo.datum);
+    //                         m_faceList.pop_front();
+    //                     }
+    //                 }else {
+    //                     //if (faceinfo.pkt_pts <= myFrame->pkt_pts)
+    //                     {
+    //                         std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
+    //                         render->draw_info(faceinfo.datum);
+    //                         m_faceList.pop_front();
+    //                     }
+    //                     //{
+    //                     //    std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
+    //                     //    break;
+    //                     //}
+    //                 }
+    //             }
+    //
+    //             //Free frame
+    //             av_frame_unref(myFrame);
+    //             av_frame_free(&myFrame);
+    //         }
+    //     }
+    //
+    // }
+    while (m_is_play_thread_running) {
+        // 检查视频组件或帧列表为空时等待
+        if (!m_video_widget || m_frameList.empty()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             continue;
         }
 
         std::lock_guard<std::mutex> lck(m_framelist_sync);
-        if (m_frameList.size() > 0) {
-            
-            auto myFrame = m_frameList.front();
-            auto cur_ts = av_gettime_relative();
-            bool is_play = false;
-            if (m_last_system_ts == 0) {
-                is_play = true;
-            }else {
-                auto delta = myFrame->pkt_pts - m_last_pkt_pts;
-                delta = delta > 40000 ? 40000:delta;
-                if (m_last_system_ts + delta < cur_ts){
-                    is_play = true;
-                }
-            }
+        if (m_frameList.empty()) continue;
 
-            if (!is_play) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                continue;
-            }
+        auto myFrame = m_frameList.front();
+        auto cur_ts = av_gettime_relative();
+        bool is_play = (m_last_system_ts == 0);  // 初始状态直接播放
 
-
-            int N = 1;
-
-            if (m_frameList.size() > 2) N = 2;
-            while(N-- > 0) {
-                auto myFrame = m_frameList.front();
-
-                //std::cout << "cache frames:" << m_frameList.size() << std::endl;
-                //std::cout << "Frame Play Interval: " << (cur_ts - m_last_system_ts) / 1000 << std::endl;
-                m_last_system_ts = cur_ts;
-                m_last_pkt_pts = myFrame->pkt_pts;
-
-                m_frameList.pop_front();
-                auto render = m_video_widget->GetVideoHwnd();
-                render->draw_frame(myFrame);
-
-                while (m_faceList.size() > 0) {
-                    auto faceinfo = m_faceList.front();
-                    if (AV_NOPTS_VALUE == faceinfo.pkt_pts) {
-                        if (faceinfo.pkt_pos <= myFrame->pkt_pos) {
-                            render->draw_info(faceinfo.datum);
-                            m_faceList.pop_front();
-                        } else {
-                            break;
-                        }
-                    }else {
-                        if (faceinfo.pkt_pts <= myFrame->pkt_pts) {
-                            render->draw_info(faceinfo.datum);
-                            m_faceList.pop_front();
-                        } else {
-                            break;
-                        }
-                    }
-                }
-
-                //Free frame
-                av_frame_unref(myFrame);
-                av_frame_free(&myFrame);
-            }
+        // 计算是否到达播放时间
+        if (!is_play) {
+            auto delta = myFrame->pkt_pts - m_last_pkt_pts;
+            if (delta > 4000) delta = 4000;  // 限制最大间隔
+            is_play = (m_last_system_ts + delta < cur_ts);
         }
 
+        if (!is_play) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            continue;
+        }
+
+        // 确定一次处理的帧数（1或2帧）
+        const int N = (m_frameList.size() > 2) ? 2 : 1;
+        for (int i = 0; i < N; ++i) {
+            myFrame = m_frameList.front();
+            //std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
+            //std::cout << "cache frames:" << m_frameList.size() << std::endl;
+
+            // 更新时间戳
+            m_last_system_ts = cur_ts;
+            m_last_pkt_pts = myFrame->pkt_pts;
+
+            // 移除并绘制当前帧
+            m_frameList.pop_front();
+            auto render = m_video_widget->GetVideoHwnd();
+            render->draw_frame(myFrame);
+
+            // 处理所有面部信息
+            while (!m_faceList.empty()) {
+                auto& faceinfo = m_faceList.front();
+                //std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
+                render->draw_info(faceinfo.datum);
+                m_faceList.pop_front();
+            }
+
+            // 释放帧资源
+            av_frame_unref(myFrame);
+            av_frame_free(&myFrame);
+        }
     }
 
 }

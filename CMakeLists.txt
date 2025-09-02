@@ -17,8 +17,8 @@ find_package(OpenCV)
 set(APP_TOP ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (UNIX)
-   add_compile_options(-std=c++11 -Wno-deprecated-declarations)
-   set(FFMPEG_ROOT /usr/local)
+   add_compile_options(-std=c++17 -Wno-deprecated-declarations)
+   set(FFMPEG_ROOT  $ENV{HOME}/buildroot)
 endif()
 
 set(common_inc_dirs ${APP_TOP}/client_common
@@ -27,7 +27,7 @@ set(common_inc_dirs ${APP_TOP}/client_common
         ${APP_TOP}/../otl
         ${APP_TOP}/third_party/jsoncpp
 )
-set(common_link_dirs ${FFMPEG_ROOT}/lib)
+set(common_link_dirs /opt/tops/lib)
 
 if (WIN32)
    set(DEV_ROOT c:\\dev)

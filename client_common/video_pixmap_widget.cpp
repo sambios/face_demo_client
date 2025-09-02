@@ -139,7 +139,7 @@ void video_pixmap_widget::drawBox(QImage& dst) {
   Q_ASSERT(m_info.type() == 0);
   if (m_info.bboxes().size() > 0) {
     QPainter painter1(&dst);
-    QPen redPen(Qt::green);
+    QPen redPen(Qt::yellow);
     redPen.setWidth(5);
     painter1.setPen(redPen);
     for (int i = 0; i < m_info.bboxes().size(); ++i) {
