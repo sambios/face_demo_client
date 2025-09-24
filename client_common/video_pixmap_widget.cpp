@@ -153,9 +153,9 @@ void video_pixmap_widget::drawBox(QImage& dst) {
         QRect rc(pt.x1, pt.y1, pt.x2-pt.x1, pt.y2-pt.y1);
         painter1.drawRect(rc);
 
-        QFont font("Arail", 40);
+        QFont font("Arail", 20);
         painter1.setFont(font);
-        QString text = QString("%1-%2").arg(pt.classId).arg(0);
+        QString text = QString("%1-%2-%3").arg(pt.classId).arg(pt.confidence, 0, 'f', 1).arg(pt.trackId);
         painter1.drawText(pt.x1-1, pt.y1-4, text);
     }
   }

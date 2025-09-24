@@ -40,6 +40,14 @@ int StreamController::start_stream(const std::string& strmFmt, const std::string
 
     av_dict_free(&opts);
 
+    // initialize playback timing
+    m_timebase = m_rtsp_reader.getTimeBase();
+    m_timebase_inited = (m_timebase.num != 0 && m_timebase.den != 0);
+    m_clock_start_sys_us = 0;
+    m_clock_start_pts_us = AV_NOPTS_VALUE;
+    m_last_system_ts = 0;
+    m_last_pkt_pts = 0;
+
     m_is_play_thread_running = true;
     m_play_thread = new std::thread(&StreamController::video_play_thread_proc, this);
     return 0;
@@ -73,9 +81,25 @@ void StreamController::onDecodedAVFrame(const AVPacket *pkt, const AVFrame *pFra
         last_frame_time = av_gettime();
     }
 #endif
+    // Ensure timebase is available (decoder set after async open)
+    if (!m_timebase_inited) {
+        auto tb = m_rtsp_reader.getTimeBase();
+        if (tb.num != 0 && tb.den != 0) {
+            m_timebase = tb;
+            m_timebase_inited = true;
+        }
+    }
+
     auto new_frame = av_frame_clone(pFrame);
     std::lock_guard<std::mutex> lck(m_framelist_sync);
     m_frameList.push_back(new_frame);
+    // Prevent unbounded growth to keep latency in check
+    while (m_frameList.size() > m_max_queue_frames) {
+        auto drop = m_frameList.front();
+        m_frameList.pop_front();
+        av_frame_unref(drop);
+        av_frame_free(&drop);
+    }
 }
 
 
@@ -102,134 +126,111 @@ void StreamController::onDecodedSeiInfo(const uint8_t *sei_data, int sei_data_le
 
 void StreamController::video_play_thread_proc() {
 
-    // while(m_is_play_thread_running){
-    //     if (m_video_widget == nullptr || m_frameList.size() == 0){
-    //         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    //         continue;
-    //     }
-    //
-    //     std::lock_guard<std::mutex> lck(m_framelist_sync);
-    //     if (m_frameList.size() > 0) {
-    //
-    //         auto myFrame = m_frameList.front();
-    //         auto cur_ts = av_gettime_relative();
-    //         bool is_play = false;
-    //         if (m_last_system_ts == 0) {
-    //             is_play = true;
-    //         }else {
-    //             auto delta = myFrame->pkt_pts - m_last_pkt_pts;
-    //             delta = delta > 40000 ? 40000:delta;
-    //             if (m_last_system_ts + delta < cur_ts){
-    //                 is_play = true;
-    //             }
-    //         }
-    //
-    //         if (!is_play) {
-    //             std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    //             continue;
-    //         }
-    //
-    //
-    //         int N = 1;
-    //
-    //         if (m_frameList.size() > 2) N = 2;
-    //         while(N-- > 0) {
-    //             auto myFrame = m_frameList.front();
-    //             std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
-    //             std::cout << "cache frames:" << m_frameList.size() << std::endl;
-    //             //std::cout << "Frame Play Interval: " << (cur_ts - m_last_system_ts) / 1000 << std::endl;
-    //             m_last_system_ts = cur_ts;
-    //             m_last_pkt_pts = myFrame->pkt_pts;
-    //
-    //             m_frameList.pop_front();
-    //             auto render = m_video_widget->GetVideoHwnd();
-    //             render->draw_frame(myFrame);
-    //
-    //             while (m_faceList.size() > 0) {
-    //                 auto faceinfo = m_faceList.front();
-    //                 if (AV_NOPTS_VALUE == faceinfo.pkt_pts) {
-    //                     std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
-    //                     //if (faceinfo.pkt_pos <= myFrame->pkt_pos)
-    //                     {
-    //                         std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
-    //                         render->draw_info(faceinfo.datum);
-    //                         m_faceList.pop_front();
-    //                     }
-    //                 }else {
-    //                     //if (faceinfo.pkt_pts <= myFrame->pkt_pts)
-    //                     {
-    //                         std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
-    //                         render->draw_info(faceinfo.datum);
-    //                         m_faceList.pop_front();
-    //                     }
-    //                     //{
-    //                     //    std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
-    //                     //    break;
-    //                     //}
-    //                 }
-    //             }
-    //
-    //             //Free frame
-    //             av_frame_unref(myFrame);
-    //             av_frame_free(&myFrame);
-    //         }
-    //     }
-    //
-    // }
+    const int late_drop_threshold_ms = 80;     // drop if later than this
+    const int sleep_quantum_ms = 3;            // sleep granularity
+
     while (m_is_play_thread_running) {
-        // 检查视频组件或帧列表为空时等待
-        if (!m_video_widget || m_frameList.empty()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        if (!m_video_widget) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
             continue;
         }
 
-        std::lock_guard<std::mutex> lck(m_framelist_sync);
-        if (m_frameList.empty()) continue;
+        AVFrame* frame_to_render = nullptr;
+        int64_t frame_pts = AV_NOPTS_VALUE;
+        int64_t frame_pts_us = 0;
 
-        auto myFrame = m_frameList.front();
-        auto cur_ts = av_gettime_relative();
-        bool is_play = (m_last_system_ts == 0);  // 初始状态直接播放
+        {
+            std::lock_guard<std::mutex> lck(m_framelist_sync);
+            if (m_frameList.empty()) {
+                frame_to_render = nullptr;
+            } else {
+                // buffer a couple frames to smooth jitter
+                if (m_frameList.size() < m_min_buffer_frames && m_clock_start_sys_us == 0) {
+                    frame_to_render = nullptr;
+                } else {
+                    AVFrame* f = m_frameList.front();
+                    int64_t best_pts = (f->best_effort_timestamp != AV_NOPTS_VALUE) ? f->best_effort_timestamp : f->pkt_pts;
+                    frame_pts = best_pts;
+                    if (m_timebase_inited && frame_pts != AV_NOPTS_VALUE) {
+                        frame_pts_us = av_rescale_q(frame_pts, m_timebase, AVRational{1, 1000000});
+                    } else {
+                        // fall back: play ASAP
+                        frame_pts_us = 0;
+                    }
 
-        // 计算是否到达播放时间
-        if (!is_play) {
-            auto delta = myFrame->pkt_pts - m_last_pkt_pts;
-            if (delta > 4000) delta = 4000;  // 限制最大间隔
-            is_play = (m_last_system_ts + delta < cur_ts);
-        }
+                    // init playback clock at the first presentable frame
+                    if (m_clock_start_sys_us == 0 && frame_pts_us != 0) {
+                        m_clock_start_sys_us = av_gettime_relative();
+                        m_clock_start_pts_us = frame_pts_us;
+                    }
 
-        if (!is_play) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-            continue;
-        }
+                    int64_t now = av_gettime_relative();
+                    int64_t due = (m_clock_start_sys_us && frame_pts_us != 0)
+                                  ? (m_clock_start_sys_us + (frame_pts_us - m_clock_start_pts_us))
+                                  : now;
 
-        // 确定一次处理的帧数（1或2帧）
-        const int N = (m_frameList.size() > 2) ? 2 : 1;
-        for (int i = 0; i < N; ++i) {
-            myFrame = m_frameList.front();
-            //std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
-            //std::cout << "cache frames:" << m_frameList.size() << std::endl;
+                    if (due > now) {
+                        // not yet time, wait a bit
+                        frame_to_render = nullptr;
+                    } else {
+                        // ready or late: if very late, drop frames to catch up
+                        int64_t late_ms = (now - due) / 1000;
+                        if (late_ms > late_drop_threshold_ms && m_frameList.size() > 1) {
+                            // drop until next frame is closer to due time or queue small
+                            while (m_frameList.size() > 1) {
+                                AVFrame* drop = m_frameList.front();
+                                m_frameList.pop_front();
+                                av_frame_unref(drop);
+                                av_frame_free(&drop);
 
-            // 更新时间戳
-            m_last_system_ts = cur_ts;
-            m_last_pkt_pts = myFrame->pkt_pts;
+                                AVFrame* nf = m_frameList.front();
+                                int64_t npts = (nf->best_effort_timestamp != AV_NOPTS_VALUE) ? nf->best_effort_timestamp : nf->pkt_pts;
+                                if (npts != AV_NOPTS_VALUE && m_timebase_inited) {
+                                    int64_t npts_us = av_rescale_q(npts, m_timebase, AVRational{1, 1000000});
+                                    due = m_clock_start_sys_us + (npts_us - m_clock_start_pts_us);
+                                    late_ms = (now - due) / 1000;
+                                    if (late_ms <= late_drop_threshold_ms) break;
+                                } else {
+                                    // can't evaluate lateness accurately; stop aggressive dropping
+                                    break;
+                                }
+                            }
+                        }
 
-            // 移除并绘制当前帧
-            m_frameList.pop_front();
-            auto render = m_video_widget->GetVideoHwnd();
-            render->draw_frame(myFrame);
-
-            // 处理所有面部信息
-            while (!m_faceList.empty()) {
-                auto& faceinfo = m_faceList.front();
-                //std::cout << __FUNCTION__ << ":" << __LINE__ << std::endl;
-                render->draw_info(faceinfo.datum);
-                m_faceList.pop_front();
+                        // finally pick a frame to render
+                        frame_to_render = m_frameList.front();
+                        m_frameList.pop_front();
+                    }
+                }
             }
-
-            // 释放帧资源
-            av_frame_unref(myFrame);
-            av_frame_free(&myFrame);
         }
+
+        if (!frame_to_render) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_quantum_ms));
+            continue;
+        }
+
+        // Render outside lock
+        auto render = m_video_widget->GetVideoHwnd();
+        render->draw_frame(frame_to_render);
+
+        // Draw face info whose pts <= current frame pts (or unknown pts)
+        {
+            std::lock_guard<std::mutex> lck(m_framelist_sync);
+            while (!m_faceList.empty()) {
+                auto &faceinfo = m_faceList.front();
+                if (faceinfo.pkt_pts == AV_NOPTS_VALUE || frame_pts == AV_NOPTS_VALUE || faceinfo.pkt_pts <= frame_pts) {
+                    render->draw_info(faceinfo.datum);
+                    m_faceList.pop_front();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // free frame
+        av_frame_unref(frame_to_render);
+        av_frame_free(&frame_to_render);
     }
 
 }

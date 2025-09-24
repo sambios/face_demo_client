@@ -27,7 +27,8 @@ set(common_inc_dirs ${APP_TOP}/client_common
         ${APP_TOP}/../otl
         ${APP_TOP}/third_party/jsoncpp
 )
-set(common_link_dirs /opt/tops/lib)
+
+set(common_link_dirs ${FFMPEG_ROOT}/lib)
 
 if (WIN32)
    set(DEV_ROOT c:\\dev)

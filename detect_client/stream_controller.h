@@ -41,6 +41,15 @@ private:
     int64_t m_last_system_ts {0};
     int64_t m_last_pkt_pts{0};
 
+    // Playback timing
+    AVRational m_timebase {1, 1000};
+    bool m_timebase_inited {false};
+    int64_t m_clock_start_sys_us {0};
+    int64_t m_clock_start_pts_us {AV_NOPTS_VALUE};
+    // buffering and dropping thresholds
+    size_t m_min_buffer_frames {2};
+    size_t m_max_queue_frames {30};
+
 
 };
 

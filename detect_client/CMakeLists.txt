@@ -37,7 +37,7 @@ if (${BUILD_TYPE} STREQUAL pcie)
 endif ()
 
 if (${BUILD_TYPE} STREQUAL dummy)
-    set(link_dirs ${common_link_dirs}
+    set(link_dirs /usr/lib/x86_64-linux-gnu/ ${common_link_dirs}
             )
     set(link_libs otl
             ${OpenCV_LIBS}
